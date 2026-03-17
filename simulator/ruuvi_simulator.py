@@ -151,7 +151,7 @@ def main():
         loop.quit()
 
     adv_mgr.RegisterAdvertisement(
-        adv.object_path, {},
+        dbus.ObjectPath(ADV_PATH), {},
         reply_handler=on_ok,
         error_handler=on_err,
     )
@@ -162,7 +162,7 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping.")
         try:
-            adv_mgr.UnregisterAdvertisement(adv.object_path)
+            adv_mgr.UnregisterAdvertisement(dbus.ObjectPath(ADV_PATH))
         except Exception:
             pass
 
