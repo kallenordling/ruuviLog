@@ -19,144 +19,92 @@ import sys
 import time
 from gi.repository import GLib
 
-BLUEZ_SERVICE = "org.bluez"
-ADAPTER_IFACE = "org.bluez.Adapter1"
+BLUEZ_SERVICE     = "org.bluez"
 ADV_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
-ADV_IFACE = "org.bluez.LEAdvertisement1"
-DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
+ADV_IFACE         = "org.bluez.LEAdvertisement1"
+DBUS_PROP_IFACE   = "org.freedesktop.DBus.Properties"
+DBUS_OM_IFACE     = "org.freedesktop.DBus.ObjectManager"
 
-RUUVI_MANUFACTURER_ID = 0x0499
-ADV_PATH = "/com/nordling/ruuvisim/advertisement0"
+RUUVI_MFR_ID = 0x0499
+ADV_PATH     = "/com/nordling/ruuvisim/adv0"
 
 
 def find_adapter(bus):
-    remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE, "/"), "org.freedesktop.DBus.ObjectManager")
-    objects = remote_om.GetManagedObjects()
-    for path, ifaces in objects.items():
+    om = dbus.Interface(bus.get_object(BLUEZ_SERVICE, "/"), DBUS_OM_IFACE)
+    for path, ifaces in om.GetManagedObjects().items():
         if ADV_MANAGER_IFACE in ifaces:
             return path
     return None
 
 
-def encode_df5(temp_c, humidity_pct, pressure_pa, accel_x=0, accel_y=0, accel_z=1000,
+def encode_df5(temp_c, humidity_pct, pressure_pa,
+               accel_x=0, accel_y=0, accel_z=1000,
                battery_mv=2950, tx_dbm=4, movement=0, sequence=0):
-    """Encode sensor values into Ruuvi Data Format 5 bytes."""
-    temp_raw = round(temp_c * 200)
-    hum_raw = round(humidity_pct * 400)
-    pres_raw = round(pressure_pa) - 50000
+    temp_raw  = max(-32767, min(32767, round(temp_c * 200)))
+    hum_raw   = max(0, min(65534, round(humidity_pct * 400)))
+    pres_raw  = max(0, min(65534, round(pressure_pa) - 50000))
     power_raw = ((battery_mv - 1600) << 5) | ((tx_dbm + 40) // 2)
 
-    # Clamp values to valid ranges
-    temp_raw = max(-32767, min(32767, temp_raw))
-    hum_raw = max(0, min(65534, hum_raw))
-    pres_raw = max(0, min(65534, pres_raw))
-
-    payload = struct.pack(
-        ">BhHHhhhHBH",
-        5,            # data format
-        temp_raw,
-        hum_raw,
-        pres_raw,
-        accel_x,
-        accel_y,
-        accel_z,
-        power_raw,
-        movement,
-        sequence,
+    data = struct.pack(">BhHHhhhHBH",
+        5, temp_raw, hum_raw, pres_raw,
+        accel_x, accel_y, accel_z,
+        power_raw, movement, sequence,
     )
-    # Append a fake MAC address (6 bytes)
-    payload += bytes([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01])
-    return payload
+    data += bytes([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01])  # fake MAC
+    return data
 
 
 class RuuviAdvertisement(dbus.service.Object):
 
-    def __init__(self, bus, index):
-        self.path = ADV_PATH
-        self.bus = bus
-        self.ad_type = "peripheral"
-        self._sequence = 0
-        self._movement = 0
-        self._start_time = time.time()
-        dbus.service.Object.__init__(self, bus, self.path)
+    def __init__(self, bus):
+        dbus.service.Object.__init__(self, bus, ADV_PATH)
+        self._start  = time.time()
+        self._seq    = 0
+        self._move   = 0
 
-    def _get_manufacturer_data(self):
-        elapsed = time.time() - self._start_time
-
-        # Simulate realistic sensor values with gentle variation
-        temperature = 22.5 + 3.0 * math.sin(elapsed / 60.0)       # ±3°C over 60 s cycle
-        humidity = 55.0 + 10.0 * math.sin(elapsed / 90.0)          # ±10% over 90 s
-        pressure = 101325 + 200 * math.sin(elapsed / 120.0)        # ±200 Pa over 120 s
-        battery_mv = 2950 - int(elapsed / 3600)                     # slow drain
-        accel_z = 1000 + random.randint(-5, 5)                      # slight noise
-
-        self._sequence = (self._sequence + 1) % 65535
-        payload = encode_df5(
-            temp_c=round(temperature, 3),
+    def _build_payload(self):
+        t = time.time() - self._start
+        temp     = 22.5  + 3.0  * math.sin(t / 60.0)
+        humidity = 55.0  + 10.0 * math.sin(t / 90.0)
+        pressure = 101325 + 200 * math.sin(t / 120.0)
+        battery  = max(1600, 2950 - int(t / 3600))
+        accel_z  = 1000 + random.randint(-5, 5)
+        self._seq = (self._seq + 1) % 65535
+        return encode_df5(
+            temp_c=round(temp, 3),
             humidity_pct=round(humidity, 3),
             pressure_pa=round(pressure),
             accel_z=accel_z,
-            battery_mv=max(1600, battery_mv),
-            movement=self._movement,
-            sequence=self._sequence,
+            battery_mv=battery,
+            sequence=self._seq,
         )
-        return dbus.Array([dbus.Byte(b) for b in payload], signature="y")
 
-    def get_properties(self):
+    def _props(self):
+        payload = self._build_payload()
+        # variant_level=1 is required so dbus-python wraps the array as a
+        # D-Bus variant inside the ManufacturerData dictionary.
+        mfr_array = dbus.Array(
+            [dbus.Byte(b) for b in payload],
+            signature='y',
+            variant_level=1,
+        )
         return {
-            ADV_IFACE: {
-                "Type": self.ad_type,
-                "LocalName": dbus.String("RuuviSimulator"),
-                "ManufacturerData": dbus.Dictionary(
-                    {dbus.UInt16(RUUVI_MANUFACTURER_ID): self._get_manufacturer_data()},
-                    signature="qv",
-                ),
-                "Includes": dbus.Array(["local-name"], signature="s"),
-            }
+            "Type": dbus.String("peripheral"),
+            "ManufacturerData": dbus.Dictionary(
+                {dbus.UInt16(RUUVI_MFR_ID): mfr_array},
+                signature='qv',
+            ),
         }
-
-    def get_path(self):
-        return dbus.ObjectPath(self.path)
 
     @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
     def GetAll(self, interface):
         if interface != ADV_IFACE:
             raise dbus.exceptions.DBusException("No such interface: " + interface)
-        return self.get_properties()[ADV_IFACE]
+        return self._props()
 
-    @dbus.service.method(ADV_IFACE, in_signature="", out_signature="")
+    @dbus.service.method(ADV_IFACE)
     def Release(self):
-        print("Advertisement released by BlueZ.")
-
-
-def update_advertisement(bus, adv, adapter_path, adv_manager):
-    """Re-register advertisement to push updated manufacturer data."""
-    try:
-        adv_manager.UnregisterAdvertisement(adv.get_path())
-    except Exception:
-        pass
-
-    props = adv.get_properties()[ADV_IFACE]
-    elapsed = time.time() - adv._start_time
-    temperature = 22.5 + 3.0 * math.sin(elapsed / 60.0)
-    humidity = 55.0 + 10.0 * math.sin(elapsed / 90.0)
-    pressure = 101325 + 200 * math.sin(elapsed / 120.0)
-
-    print(
-        f"\r  Temp: {temperature:+.2f} °C  "
-        f"Humidity: {humidity:.1f} %  "
-        f"Pressure: {pressure:.0f} Pa  "
-        f"Seq: {adv._sequence}    ",
-        end="",
-        flush=True,
-    )
-
-    adv_manager.RegisterAdvertisement(
-        adv.get_path(), {},
-        reply_handler=lambda: None,
-        error_handler=lambda e: print(f"\nRe-register error: {e}"),
-    )
-    return True  # keep GLib timeout running
+        print("\nAdvertisement released by BlueZ.")
 
 
 def main():
@@ -165,43 +113,56 @@ def main():
 
     adapter_path = find_adapter(bus)
     if not adapter_path:
-        print("ERROR: No Bluetooth adapter with LE advertising support found.")
+        print("ERROR: No BLE-capable Bluetooth adapter found.")
         sys.exit(1)
 
     print(f"Using adapter: {adapter_path}")
 
-    adv_manager = dbus.Interface(
+    adv_mgr = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path),
         ADV_MANAGER_IFACE,
     )
 
-    adv = RuuviAdvertisement(bus, 0)
+    adv = RuuviAdvertisement(bus)
+    loop = GLib.MainLoop()
 
-    mainloop = GLib.MainLoop()
-
-    def on_register_ok():
+    def on_ok():
         print("RuuviTag simulator is advertising!")
-        print("Your phone's RuuviLog app should detect it as a tag.\n")
-        # Update advertisement data every 2 seconds
-        GLib.timeout_add_seconds(2, update_advertisement, bus, adv, adapter_path, adv_manager)
+        print("Open RuuviLog on your phone and press Start Scan.\n")
 
-    def on_register_error(error):
-        print(f"Failed to register advertisement: {error}")
-        mainloop.quit()
+        def tick():
+            t = time.time() - adv._start
+            temp     = 22.5  + 3.0  * math.sin(t / 60.0)
+            humidity = 55.0  + 10.0 * math.sin(t / 90.0)
+            pressure = 101325 + 200 * math.sin(t / 120.0)
+            print(
+                f"\r  Temp: {temp:+.2f} °C  "
+                f"Humidity: {humidity:.1f} %%  "
+                f"Pressure: {pressure:.0f} Pa  "
+                f"Seq: {adv._seq}    ",
+                end="", flush=True,
+            )
+            return True  # keep repeating
 
-    adv_manager.RegisterAdvertisement(
-        adv.get_path(), {},
-        reply_handler=on_register_ok,
-        error_handler=on_register_error,
+        GLib.timeout_add_seconds(2, tick)
+
+    def on_err(e):
+        print(f"Failed to register advertisement: {e}")
+        loop.quit()
+
+    adv_mgr.RegisterAdvertisement(
+        adv.object_path, {},
+        reply_handler=on_ok,
+        error_handler=on_err,
     )
 
     try:
-        print("Starting RuuviTag BLE simulator... Press Ctrl+C to stop.\n")
-        mainloop.run()
+        print("Starting RuuviTag BLE simulator… Press Ctrl+C to stop.\n")
+        loop.run()
     except KeyboardInterrupt:
-        print("\nStopping simulator.")
+        print("\nStopping.")
         try:
-            adv_manager.UnregisterAdvertisement(adv.get_path())
+            adv_mgr.UnregisterAdvertisement(adv.object_path)
         except Exception:
             pass
 
