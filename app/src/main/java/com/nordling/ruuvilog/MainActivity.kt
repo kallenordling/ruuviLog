@@ -9,21 +9,24 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.Intent
 import android.os.Bundle
-import android.os.ParcelUuid
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.nordling.ruuvilog.databinding.ActivityMainBinding
-import java.nio.ByteOrder
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: RuuviViewModel by viewModels()
-    private val adapter = RuuviAdapter()
+    private val adapter = RuuviAdapter { tag ->
+        startActivity(Intent(this, LoggingActivity::class.java).apply {
+            putExtra(LoggingActivity.EXTRA_MAC, tag.mac)
+        })
+    }
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter

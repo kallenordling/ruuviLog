@@ -10,7 +10,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class RuuviAdapter : ListAdapter<RuuviTag, RuuviAdapter.ViewHolder>(Diff) {
+class RuuviAdapter(
+    private val onTagClick: (RuuviTag) -> Unit
+) : ListAdapter<RuuviTag, RuuviAdapter.ViewHolder>(Diff) {
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
@@ -29,6 +31,7 @@ class RuuviAdapter : ListAdapter<RuuviTag, RuuviAdapter.ViewHolder>(Diff) {
             binding.textBattery.text = tag.batteryVoltage?.let { "%.3f V".format(it) } ?: "—"
             binding.textMovement.text = tag.movementCounter?.toString() ?: "—"
             binding.textSequence.text = tag.sequenceNumber?.toString() ?: "—"
+            binding.root.setOnClickListener { onTagClick(tag) }
         }
     }
 
