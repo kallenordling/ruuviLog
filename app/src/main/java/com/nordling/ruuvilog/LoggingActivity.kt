@@ -20,6 +20,9 @@ import com.nordling.ruuvilog.databinding.ActivityLoggingBinding
 import com.nordling.ruuvilog.db.AppDatabase
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class LoggingActivity : AppCompatActivity() {
 
@@ -205,13 +208,18 @@ class LoggingActivity : AppCompatActivity() {
                 }
             }
 
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
             val exportDir = File(cacheDir, "export").also { it.mkdirs() }
             val file = File(exportDir, "ruuvi_${targetMac.replace(":", "")}.csv")
             file.bufferedWriter().use { w ->
-                w.write("timestamp,temperature_c,latitude,longitude,speed_kmh\n")
+                w.write("time,temperature_c,latitude,longitude,speed_kmh\n")
                 entries.forEach { e ->
-                    val speed = speeds[e.id]?.let { "%.2f".format(it) } ?: ""
-                    w.write("${e.timestamp},${e.temperature},${e.latitude ?: ""},${e.longitude ?: ""},$speed\n")
+                    val time = dateFormat.format(Date(e.timestamp))
+                    val temp = String.format(Locale.US, "%.2f", e.temperature)
+                    val lat = e.latitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
+                    val lon = e.longitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
+                    val speed = speeds[e.id]?.let { String.format(Locale.US, "%.2f", it) } ?: ""
+                    w.write("$time,$temp,$lat,$lon,$speed\n")
                 }
             }
 
