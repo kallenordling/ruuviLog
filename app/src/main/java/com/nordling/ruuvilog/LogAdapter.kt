@@ -21,6 +21,8 @@ class LogAdapter : ListAdapter<LogEntry, LogAdapter.ViewHolder>(Diff) {
         fun bind(entry: LogEntry) {
             binding.textTimestamp.text = dateFormat.format(Date(entry.timestamp))
             binding.textTemperature.text = "%.2f °C".format(entry.temperature)
+            binding.textGpsIndicator.visibility =
+                if (entry.latitude != null) android.view.View.VISIBLE else android.view.View.GONE
         }
     }
 

@@ -8,5 +8,7 @@ data class LogEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val mac: String,
     val temperature: Double,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )

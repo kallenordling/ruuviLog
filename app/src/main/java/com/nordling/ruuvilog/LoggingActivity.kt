@@ -7,7 +7,11 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -16,6 +20,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.nordling.ruuvilog.databinding.ActivityLoggingBinding
@@ -29,6 +34,7 @@ class LoggingActivity : AppCompatActivity() {
         const val EXTRA_MAC = "extra_mac"
         val INTERVAL_LABELS = listOf("5 seconds", "10 seconds", "30 seconds", "1 minute", "5 minutes", "10 minutes")
         val INTERVAL_SECONDS = listOf(5, 10, 30, 60, 300, 600)
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
     }
 
     private lateinit var binding: ActivityLoggingBinding
@@ -37,6 +43,7 @@ class LoggingActivity : AppCompatActivity() {
 
     private lateinit var targetMac: String
     private var latestTag: RuuviTag? = null
+    private var lastLocation: Location? = null
     private var isLogging = false
     private val handler = Handler(Looper.getMainLooper())
     private var selectedIntervalSeconds = 10
@@ -45,12 +52,30 @@ class LoggingActivity : AppCompatActivity() {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
     }
 
+    private val locationManager by lazy {
+        getSystemService(LOCATION_SERVICE) as LocationManager
+    }
+
+    private val locationListener = LocationListener { location ->
+        lastLocation = location
+        updateGpsStatus(location)
+    }
+
     private val logRunnable = object : Runnable {
         override fun run() {
             val temp = latestTag?.temperature
             if (temp != null) {
+                val lat = lastLocation?.latitude
+                val lon = lastLocation?.longitude
                 lifecycleScope.launch {
-                    db.logDao().insert(LogEntry(mac = targetMac, temperature = temp))
+                    db.logDao().insert(
+                        LogEntry(
+                            mac = targetMac,
+                            temperature = temp,
+                            latitude = lat,
+                            longitude = lon
+                        )
+                    )
                 }
             }
             handler.postDelayed(this, selectedIntervalSeconds * 1000L)
@@ -113,7 +138,70 @@ class LoggingActivity : AppCompatActivity() {
             lifecycleScope.launch { db.logDao().deleteByMac(targetMac) }
         }
 
+        binding.btnViewMap.setOnClickListener {
+            startActivity(Intent(this, MapActivity::class.java).apply {
+                putExtra(MapActivity.EXTRA_MAC, targetMac)
+            })
+        }
+
         startScan()
+        requestLocationPermissionAndStart()
+    }
+
+    private fun requestLocationPermissionAndStart() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates()
+        } else {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE &&
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates()
+        } else if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            binding.textLiveGps.text = "GPS: no permission"
+        }
+    }
+
+    private fun startLocationUpdates() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) return
+
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        providers.forEach { provider ->
+            if (locationManager.isProviderEnabled(provider)) {
+                locationManager.requestLocationUpdates(provider, 2000L, 0f, locationListener)
+                locationManager.getLastKnownLocation(provider)?.let { loc ->
+                    if (lastLocation == null) {
+                        lastLocation = loc
+                        updateGpsStatus(loc)
+                    }
+                }
+            }
+        }
+        if (!providers.any { locationManager.isProviderEnabled(it) }) {
+            binding.textLiveGps.text = "GPS: disabled"
+        }
+    }
+
+    private fun stopLocationUpdates() {
+        locationManager.removeUpdates(locationListener)
+    }
+
+    private fun updateGpsStatus(location: Location) {
+        runOnUiThread {
+            binding.textLiveGps.text = "GPS: %.5f, %.5f (±%.0f m)".format(
+                location.latitude, location.longitude, location.accuracy
+            )
+        }
     }
 
     private fun startLogging() {
@@ -170,5 +258,6 @@ class LoggingActivity : AppCompatActivity() {
         super.onDestroy()
         stopScan()
         stopLogging()
+        stopLocationUpdates()
     }
 }

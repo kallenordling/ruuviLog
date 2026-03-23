@@ -19,8 +19,8 @@ android {
         applicationId = "com.nordling.ruuvilog"
         minSdk = 23
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0-beta"
+        versionCode = 2
+        versionName = "1.01-beta"
     }
 
     signingConfigs {
@@ -67,4 +67,5 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    implementation("org.osmdroid:osmdroid-android:6.1.17")
 }
