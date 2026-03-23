@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.nordling.ruuvilog.app-mergeDebugResources-41:/values-port/values-port.xml",
+            "map": [
+                {
+                    "source": "/home/nordling/.gradle/caches/transforms-3/c3b3d4244363cfcdf7f9d44efce096cd/transformed/appcompat-1.6.1/res/values-port/values-port.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "55",
+                        "endOffsets": "106"
+                    }
+                }
+            ]
+        }
+    ]
+}

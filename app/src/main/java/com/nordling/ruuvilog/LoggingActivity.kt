@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
 import android.os.IBinder
+import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
@@ -35,7 +36,12 @@ class LoggingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoggingBinding
     private val db by lazy { AppDatabase.getInstance(this) }
-    private val logAdapter = LogAdapter()
+    private val sessionAdapter = SessionAdapter { session ->
+        startActivity(Intent(this, MapActivity::class.java).apply {
+            putExtra(MapActivity.EXTRA_SESSION_ID, session.id)
+            putExtra(MapActivity.EXTRA_MAC, targetMac)
+        })
+    }
 
     private lateinit var targetMac: String
     private var selectedIntervalSeconds = 10
@@ -78,10 +84,10 @@ class LoggingActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
-        binding.recyclerLog.adapter = logAdapter
-        db.logDao().getByMac(targetMac).observe(this) { entries ->
-            logAdapter.submitList(entries)
-            binding.textLogCount.text = "${entries.size} entries"
+        binding.recyclerSessions.adapter = sessionAdapter
+        db.sessionDao().getByMac(targetMac).observe(this) { sessions ->
+            sessionAdapter.submitList(sessions)
+            binding.textNoSessions.visibility = if (sessions.isEmpty()) View.VISIBLE else View.GONE
         }
 
         binding.btnStartLog.setOnClickListener {
@@ -89,16 +95,13 @@ class LoggingActivity : AppCompatActivity() {
         }
 
         binding.btnClearLog.setOnClickListener {
-            lifecycleScope.launch { db.logDao().deleteByMac(targetMac) }
+            lifecycleScope.launch {
+                db.logDao().deleteByMac(targetMac)
+                db.sessionDao().deleteByMac(targetMac)
+            }
         }
 
         binding.btnExportCsv.setOnClickListener { exportCsv() }
-
-        binding.btnViewMap.setOnClickListener {
-            startActivity(Intent(this, MapActivity::class.java).apply {
-                putExtra(MapActivity.EXTRA_MAC, targetMac)
-            })
-        }
 
         requestLocationPermissionIfNeeded()
     }
@@ -187,8 +190,6 @@ class LoggingActivity : AppCompatActivity() {
                 Toast.makeText(this@LoggingActivity, "No data to export", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-
-            // Calculate speed between consecutive GPS entries
             val speeds = mutableMapOf<Long, Float>()
             var prevGps: com.nordling.ruuvilog.db.LogEntry? = null
             for (entry in entries) {
@@ -198,8 +199,7 @@ class LoggingActivity : AppCompatActivity() {
                         val results = FloatArray(1)
                         Location.distanceBetween(
                             prev.latitude!!, prev.longitude!!,
-                            entry.latitude, entry.longitude,
-                            results
+                            entry.latitude, entry.longitude, results
                         )
                         val timeDeltaS = (entry.timestamp - prev.timestamp) / 1000f
                         if (timeDeltaS > 0) speeds[entry.id] = (results[0] / timeDeltaS) * 3.6f
@@ -207,22 +207,21 @@ class LoggingActivity : AppCompatActivity() {
                     prevGps = entry
                 }
             }
-
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
             val exportDir = File(cacheDir, "export").also { it.mkdirs() }
             val file = File(exportDir, "ruuvi_${targetMac.replace(":", "")}.csv")
             file.bufferedWriter().use { w ->
-                w.write("time,temperature_c,latitude,longitude,speed_kmh\n")
+                w.write("time,session,temperature_c,latitude,longitude,speed_kmh\n")
                 entries.forEach { e ->
                     val time = dateFormat.format(Date(e.timestamp))
                     val temp = String.format(Locale.US, "%.2f", e.temperature)
                     val lat = e.latitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
                     val lon = e.longitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
                     val speed = speeds[e.id]?.let { String.format(Locale.US, "%.2f", it) } ?: ""
-                    w.write("$time,$temp,$lat,$lon,$speed\n")
+                    val session = e.sessionId?.toString() ?: ""
+                    w.write("$time,$session,$temp,$lat,$lon,$speed\n")
                 }
             }
-
             val uri = FileProvider.getUriForFile(this@LoggingActivity, "$packageName.fileprovider", file)
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"

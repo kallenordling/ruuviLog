@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeReleaseResources-41:/layout/activity_main.xml",
+        "source": "com.nordling.ruuvilog.app-main-44:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeReleaseResources-41:/layout/item_log.xml",
+        "source": "com.nordling.ruuvilog.app-main-44:/layout/item_log.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeReleaseResources-41:/layout/activity_logging.xml",
+        "source": "com.nordling.ruuvilog.app-main-44:/layout/activity_logging.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeReleaseResources-41:/layout/item_ruuvi.xml",
+        "source": "com.nordling.ruuvilog.app-main-44:/layout/item_ruuvi.xml"
+    }
+]

@@ -1,0 +1,38 @@
+[
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/item_speed.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/item_speed.xml"
+    },
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/item_ruuvi.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/item_ruuvi.xml"
+    },
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/item_log.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/item_log.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/item_session.xml",
+        "source": "com.nordling.ruuvilog.app-main-45:/layout/item_session.xml"
+    },
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/activity_logging.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/activity_logging.xml"
+    },
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/activity_map.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/activity_map.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/activity_logging.xml",
+        "source": "com.nordling.ruuvilog.app-main-45:/layout/activity_logging.xml"
+    },
+    {
+        "merged": "com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/activity_map.xml",
+        "source": "com.nordling.ruuvilog.app-main-45:/layout/activity_map.xml"
+    },
+    {
+        "merged": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-mergeDebugResources-42:/layout/activity_main.xml",
+        "source": "/home/nordling/.gradle/daemon/8.4/com.nordling.ruuvilog.app-main-45:/layout/activity_main.xml"
+    }
+]

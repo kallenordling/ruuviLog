@@ -26,6 +26,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import com.nordling.ruuvilog.db.AppDatabase
 import com.nordling.ruuvilog.db.LogEntry
+import com.nordling.ruuvilog.db.Session
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +61,7 @@ class LoggingService : Service() {
 
     private lateinit var targetMac: String
     private var intervalSeconds = 10
+    private var currentSessionId: Long = -1
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
@@ -77,7 +82,8 @@ class LoggingService : Service() {
                             mac = targetMac,
                             temperature = temp,
                             latitude = lastLocation.value?.latitude,
-                            longitude = lastLocation.value?.longitude
+                            longitude = lastLocation.value?.longitude,
+                            sessionId = currentSessionId.takeIf { it > 0 }
                         )
                     )
                 }
@@ -107,7 +113,11 @@ class LoggingService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Waiting for signal…"))
         startScan()
         startLocationUpdates()
-        handler.post(logRunnable)
+        scope.launch {
+            val name = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
+            currentSessionId = db.sessionDao().insert(Session(mac = targetMac, name = name))
+            handler.post(logRunnable)
+        }
         return START_STICKY
     }
 

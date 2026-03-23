@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.nordling.ruuvilog.app-mergeReleaseResources-40:/values-watch-v20/values-watch-v20.xml",
+            "map": [
+                {
+                    "source": "/home/nordling/.gradle/caches/transforms-3/c3b3d4244363cfcdf7f9d44efce096cd/transformed/appcompat-1.6.1/res/values-watch-v20/values-watch-v20.xml",
+                    "from": {
+                        "startLines": "2,5,8",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,214,385",
+                        "endLines": "4,7,10",
+                        "endColumns": "12,12,12",
+                        "endOffsets": "209,380,553"
+                    }
+                }
+            ]
+        }
+    ]
+}

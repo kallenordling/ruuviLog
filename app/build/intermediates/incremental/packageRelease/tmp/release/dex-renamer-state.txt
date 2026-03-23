@@ -1,0 +1,4 @@
+#Tue Mar 17 10:34:39 EET 2026
+base.0=/home/nordling/Documents/ruuviLog/app/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex
+renamed.0=classes.dex
+path.0=classes.dex
