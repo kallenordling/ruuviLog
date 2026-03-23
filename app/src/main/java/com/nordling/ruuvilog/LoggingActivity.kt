@@ -1,34 +1,25 @@
 package com.nordling.ruuvilog
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
+import android.content.ComponentName
 import android.content.Intent
-import androidx.core.content.FileProvider
-import java.io.File
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
-import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.IBinder
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.nordling.ruuvilog.databinding.ActivityLoggingBinding
 import com.nordling.ruuvilog.db.AppDatabase
-import com.nordling.ruuvilog.db.LogEntry
 import kotlinx.coroutines.launch
+import java.io.File
 
 class LoggingActivity : AppCompatActivity() {
 
@@ -44,60 +35,21 @@ class LoggingActivity : AppCompatActivity() {
     private val logAdapter = LogAdapter()
 
     private lateinit var targetMac: String
-    private var latestTag: RuuviTag? = null
-    private var lastLocation: Location? = null
-    private var isLogging = false
-    private val handler = Handler(Looper.getMainLooper())
     private var selectedIntervalSeconds = 10
+    private var loggingService: LoggingService? = null
+    private var isBound = false
 
-    private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
-    }
-
-    private val locationManager by lazy {
-        getSystemService(LOCATION_SERVICE) as LocationManager
-    }
-
-    private val locationListener = LocationListener { location ->
-        lastLocation = location
-        updateGpsStatus(location)
-    }
-
-    private val logRunnable = object : Runnable {
-        override fun run() {
-            val temp = latestTag?.temperature
-            if (temp != null) {
-                val lat = lastLocation?.latitude
-                val lon = lastLocation?.longitude
-                lifecycleScope.launch {
-                    db.logDao().insert(
-                        LogEntry(
-                            mac = targetMac,
-                            temperature = temp,
-                            latitude = lat,
-                            longitude = lon
-                        )
-                    )
-                }
-            }
-            handler.postDelayed(this, selectedIntervalSeconds * 1000L)
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            loggingService = (binder as LoggingService.LocalBinder).getService()
+            isBound = true
+            loggingService?.latestTag?.observe(this@LoggingActivity) { it?.let { t -> updateLiveReading(t) } }
+            loggingService?.lastLocation?.observe(this@LoggingActivity) { it?.let { l -> updateGpsStatus(l) } }
+            updateLoggingButton()
         }
-    }
-
-    private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            if (result.device.address != targetMac) return
-            val mfrData = result.scanRecord
-                ?.getManufacturerSpecificData(RuuviParser.MANUFACTURER_ID) ?: return
-            val tag = RuuviParser.parse(result.device.address, result.rssi, mfrData) ?: return
-            latestTag = tag
-            runOnUiThread { updateLiveReading(tag) }
-        }
-
-        override fun onScanFailed(errorCode: Int) {
-            runOnUiThread {
-                Toast.makeText(this@LoggingActivity, "Scan error: $errorCode", Toast.LENGTH_SHORT).show()
-            }
+        override fun onServiceDisconnected(name: ComponentName) {
+            loggingService = null
+            isBound = false
         }
     }
 
@@ -112,12 +64,10 @@ class LoggingActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = targetMac
 
-        // Interval spinner
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, INTERVAL_LABELS)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerInterval.adapter = spinnerAdapter
-        binding.spinnerInterval.setSelection(1) // default 10 s
-
+        binding.spinnerInterval.setSelection(1)
         binding.spinnerInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: android.view.View?, pos: Int, id: Long) {
                 selectedIntervalSeconds = INTERVAL_SECONDS[pos]
@@ -125,7 +75,6 @@ class LoggingActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
-        // Log list
         binding.recyclerLog.adapter = logAdapter
         db.logDao().getByMac(targetMac).observe(this) { entries ->
             logAdapter.submitList(entries)
@@ -133,16 +82,14 @@ class LoggingActivity : AppCompatActivity() {
         }
 
         binding.btnStartLog.setOnClickListener {
-            if (isLogging) stopLogging() else startLogging()
+            if (LoggingService.isRunning) stopLogging() else startLogging()
         }
 
         binding.btnClearLog.setOnClickListener {
             lifecycleScope.launch { db.logDao().deleteByMac(targetMac) }
         }
 
-        binding.btnExportCsv.setOnClickListener {
-            exportCsv()
-        }
+        binding.btnExportCsv.setOnClickListener { exportCsv() }
 
         binding.btnViewMap.setOnClickListener {
             startActivity(Intent(this, MapActivity::class.java).apply {
@@ -150,15 +97,70 @@ class LoggingActivity : AppCompatActivity() {
             })
         }
 
-        startScan()
-        requestLocationPermissionAndStart()
+        requestLocationPermissionIfNeeded()
     }
 
-    private fun requestLocationPermissionAndStart() {
+    override fun onStart() {
+        super.onStart()
+        if (LoggingService.isRunning) {
+            bindService(serviceIntent(), serviceConnection, 0)
+        }
+        updateLoggingButton()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+            loggingService = null
+        }
+    }
+
+    private fun startLogging() {
+        val intent = serviceIntent()
+        ContextCompat.startForegroundService(this, intent)
+        bindService(intent, serviceConnection, 0)
+        Toast.makeText(this, "Logging every $selectedIntervalSeconds s", Toast.LENGTH_SHORT).show()
+        updateLoggingButton()
+    }
+
+    private fun stopLogging() {
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+            loggingService = null
+        }
+        stopService(serviceIntent())
+        updateLoggingButton()
+    }
+
+    private fun updateLoggingButton() {
+        val running = LoggingService.isRunning
+        binding.btnStartLog.text = if (running) "Stop Logging" else "Start Logging"
+        binding.spinnerInterval.isEnabled = !running
+    }
+
+    private fun serviceIntent() = Intent(this, LoggingService::class.java).apply {
+        putExtra(LoggingService.EXTRA_MAC, targetMac)
+        putExtra(LoggingService.EXTRA_INTERVAL, selectedIntervalSeconds)
+    }
+
+    private fun updateLiveReading(tag: RuuviTag) {
+        binding.textLiveTemp.text = tag.temperature?.let { "%.2f °C".format(it) } ?: "—"
+        binding.textLiveRssi.text = "RSSI: ${tag.rssi} dBm"
+        binding.textLiveHumidity.text = tag.humidity?.let { "Humidity: %.1f %%".format(it) } ?: ""
+    }
+
+    private fun updateGpsStatus(location: Location) {
+        binding.textLiveGps.text = "GPS: %.5f, %.5f (±%.0f m)".format(
+            location.latitude, location.longitude, location.accuracy
+        )
+    }
+
+    private fun requestLocationPermissionIfNeeded() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED) {
-            startLocationUpdates()
-        } else {
+            != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
@@ -170,89 +172,9 @@ class LoggingActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            startLocationUpdates()
-        } else if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
             binding.textLiveGps.text = "GPS: no permission"
         }
-    }
-
-    private fun startLocationUpdates() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) return
-
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        providers.forEach { provider ->
-            if (locationManager.isProviderEnabled(provider)) {
-                locationManager.requestLocationUpdates(provider, 2000L, 0f, locationListener)
-                locationManager.getLastKnownLocation(provider)?.let { loc ->
-                    if (lastLocation == null) {
-                        lastLocation = loc
-                        updateGpsStatus(loc)
-                    }
-                }
-            }
-        }
-        if (!providers.any { locationManager.isProviderEnabled(it) }) {
-            binding.textLiveGps.text = "GPS: disabled"
-        }
-    }
-
-    private fun stopLocationUpdates() {
-        locationManager.removeUpdates(locationListener)
-    }
-
-    private fun updateGpsStatus(location: Location) {
-        runOnUiThread {
-            binding.textLiveGps.text = "GPS: %.5f, %.5f (±%.0f m)".format(
-                location.latitude, location.longitude, location.accuracy
-            )
-        }
-    }
-
-    private fun startLogging() {
-        isLogging = true
-        binding.btnStartLog.text = "Stop Logging"
-        binding.spinnerInterval.isEnabled = false
-        handler.post(logRunnable)
-        Toast.makeText(this, "Logging every $selectedIntervalSeconds s", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun stopLogging() {
-        isLogging = false
-        binding.btnStartLog.text = "Start Logging"
-        binding.spinnerInterval.isEnabled = true
-        handler.removeCallbacks(logRunnable)
-    }
-
-    private fun updateLiveReading(tag: RuuviTag) {
-        binding.textLiveTemp.text = tag.temperature?.let { "%.2f °C".format(it) } ?: "—"
-        binding.textLiveRssi.text = "RSSI: ${tag.rssi} dBm"
-        binding.textLiveHumidity.text = tag.humidity?.let { "Humidity: %.1f %%".format(it) } ?: ""
-    }
-
-    private fun startScan() {
-        if (!hasBluetoothPermission()) return
-        val filter = ScanFilter.Builder()
-            .setManufacturerData(RuuviParser.MANUFACTURER_ID, byteArrayOf())
-            .build()
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-        bluetoothAdapter?.bluetoothLeScanner?.startScan(listOf(filter), settings, scanCallback)
-    }
-
-    private fun stopScan() {
-        if (!hasBluetoothPermission()) return
-        bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
-    }
-
-    private fun hasBluetoothPermission(): Boolean {
-        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-            Manifest.permission.BLUETOOTH_SCAN
-        else
-            Manifest.permission.BLUETOOTH
-        return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun exportCsv() {
@@ -262,33 +184,49 @@ class LoggingActivity : AppCompatActivity() {
                 Toast.makeText(this@LoggingActivity, "No data to export", Toast.LENGTH_SHORT).show()
                 return@launch
             }
+
+            // Calculate speed between consecutive GPS entries
+            val speeds = mutableMapOf<Long, Float>()
+            var prevGps: com.nordling.ruuvilog.db.LogEntry? = null
+            for (entry in entries) {
+                if (entry.latitude != null && entry.longitude != null) {
+                    val prev = prevGps
+                    if (prev != null && prev.latitude != null && prev.longitude != null) {
+                        val results = FloatArray(1)
+                        Location.distanceBetween(
+                            prev.latitude!!, prev.longitude!!,
+                            entry.latitude, entry.longitude,
+                            results
+                        )
+                        val timeDeltaS = (entry.timestamp - prev.timestamp) / 1000f
+                        if (timeDeltaS > 0) speeds[entry.id] = (results[0] / timeDeltaS) * 3.6f
+                    }
+                    prevGps = entry
+                }
+            }
+
             val exportDir = File(cacheDir, "export").also { it.mkdirs() }
             val file = File(exportDir, "ruuvi_${targetMac.replace(":", "")}.csv")
             file.bufferedWriter().use { w ->
-                w.write("timestamp,temperature_c,latitude,longitude\n")
+                w.write("timestamp,temperature_c,latitude,longitude,speed_kmh\n")
                 entries.forEach { e ->
-                    w.write("${e.timestamp},${e.temperature},${e.latitude ?: ""},${e.longitude ?: ""}\n")
+                    val speed = speeds[e.id]?.let { "%.2f".format(it) } ?: ""
+                    w.write("${e.timestamp},${e.temperature},${e.latitude ?: ""},${e.longitude ?: ""},$speed\n")
                 }
             }
+
             val uri = FileProvider.getUriForFile(this@LoggingActivity, "$packageName.fileprovider", file)
-            val intent = Intent(Intent.ACTION_SEND).apply {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Export CSV"))
+            startActivity(Intent.createChooser(shareIntent, "Export CSV"))
         }
     }
 
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        stopScan()
-        stopLogging()
-        stopLocationUpdates()
     }
 }
