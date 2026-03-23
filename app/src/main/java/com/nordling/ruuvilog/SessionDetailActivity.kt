@@ -70,13 +70,11 @@ class SessionDetailActivity : AppCompatActivity() {
 
         binding.btnExportCsv.setOnClickListener { exportCsv() }
 
-        loadEntries()
+        observeEntries()
     }
 
-    private fun loadEntries() {
-        lifecycleScope.launch {
-            val entries = db.logDao().getAllBySession(sessionId)
-
+    private fun observeEntries() {
+        db.logDao().observeBySession(sessionId).observe(this) { entries ->
             val speeds = calculateSpeeds(entries)
             logDetailAdapter.submitList(entries.map { LogDetailItem(it, speeds[it.id]) })
 

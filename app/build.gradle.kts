@@ -19,8 +19,8 @@ android {
         applicationId = "com.nordling.ruuvilog"
         minSdk = 23
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.06-beta"
+        versionCode = 8
+        versionName = "1.07-beta"
     }
 
     signingConfigs {

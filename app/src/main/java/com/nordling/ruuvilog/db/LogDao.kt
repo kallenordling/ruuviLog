@@ -23,6 +23,9 @@ interface LogDao {
     @Query("SELECT * FROM log_entries WHERE sessionId = :sessionId ORDER BY timestamp ASC")
     suspend fun getAllBySession(sessionId: Long): List<LogEntry>
 
+    @Query("SELECT * FROM log_entries WHERE sessionId = :sessionId ORDER BY timestamp ASC")
+    fun observeBySession(sessionId: Long): LiveData<List<LogEntry>>
+
     @Query("SELECT * FROM log_entries WHERE mac = :mac ORDER BY timestamp ASC")
     suspend fun getAllByMac(mac: String): List<LogEntry>
 
