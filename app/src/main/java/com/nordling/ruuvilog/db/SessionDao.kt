@@ -13,6 +13,12 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE mac = :mac ORDER BY startTime DESC")
     fun getByMac(mac: String): LiveData<List<Session>>
 
+    @Query("SELECT * FROM sessions WHERE id = :id")
+    suspend fun getById(id: Long): Session?
+
+    @Query("UPDATE sessions SET name = :name WHERE id = :id")
+    suspend fun updateName(id: Long, name: String)
+
     @Query("DELETE FROM sessions WHERE mac = :mac")
     suspend fun deleteByMac(mac: String)
 }

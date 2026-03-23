@@ -7,33 +7,44 @@
     android:paddingTop="6dp"
     android:paddingBottom="6dp">
 
+    <TextView
+        android:id="@+id/textDetailTime"
+        android:layout_width="72dp"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:fontFamily="monospace" />
+
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginStart="8dp">
 
         <TextView
-            android:id="@+id/textSessionName"
+            android:id="@+id/textDetailTemp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textStyle="bold"
             android:textSize="14sp" />
 
         <TextView
-            android:id="@+id/textSessionDate"
+            android:id="@+id/textDetailGps"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?android:attr/textColorSecondary" />
+            android:textSize="11sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:fontFamily="monospace" />
 
     </LinearLayout>
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnSessionMap"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="wrap_content"
+    <TextView
+        android:id="@+id/textDetailSpeed"
+        android:layout_width="72dp"
         android:layout_height="wrap_content"
-        android:text="View" />
+        android:textSize="13sp"
+        android:gravity="end"
+        android:textColor="?attr/colorPrimary" />
 
 </LinearLayout>

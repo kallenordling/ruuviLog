@@ -37,9 +37,9 @@ class LoggingActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLoggingBinding
     private val db by lazy { AppDatabase.getInstance(this) }
     private val sessionAdapter = SessionAdapter { session ->
-        startActivity(Intent(this, MapActivity::class.java).apply {
-            putExtra(MapActivity.EXTRA_SESSION_ID, session.id)
-            putExtra(MapActivity.EXTRA_MAC, targetMac)
+        startActivity(Intent(this, SessionDetailActivity::class.java).apply {
+            putExtra(SessionDetailActivity.EXTRA_SESSION_ID, session.id)
+            putExtra(SessionDetailActivity.EXTRA_MAC, targetMac)
         })
     }
 
