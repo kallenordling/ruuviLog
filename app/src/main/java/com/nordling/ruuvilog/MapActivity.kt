@@ -32,7 +32,10 @@ class MapActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE))
+        Configuration.getInstance().apply {
+            load(this@MapActivity, getPreferences(MODE_PRIVATE))
+            userAgentValue = packageName
+        }
 
         binding = ActivityMapBinding.inflate(layoutInflater)
         setContentView(binding.root)
