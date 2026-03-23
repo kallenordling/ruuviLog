@@ -8,6 +8,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -138,6 +140,10 @@ class LoggingActivity : AppCompatActivity() {
             lifecycleScope.launch { db.logDao().deleteByMac(targetMac) }
         }
 
+        binding.btnExportCsv.setOnClickListener {
+            exportCsv()
+        }
+
         binding.btnViewMap.setOnClickListener {
             startActivity(Intent(this, MapActivity::class.java).apply {
                 putExtra(MapActivity.EXTRA_MAC, targetMac)
@@ -247,6 +253,31 @@ class LoggingActivity : AppCompatActivity() {
         else
             Manifest.permission.BLUETOOTH
         return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun exportCsv() {
+        lifecycleScope.launch {
+            val entries = db.logDao().getAllByMac(targetMac)
+            if (entries.isEmpty()) {
+                Toast.makeText(this@LoggingActivity, "No data to export", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val exportDir = File(cacheDir, "export").also { it.mkdirs() }
+            val file = File(exportDir, "ruuvi_${targetMac.replace(":", "")}.csv")
+            file.bufferedWriter().use { w ->
+                w.write("timestamp,temperature_c,latitude,longitude\n")
+                entries.forEach { e ->
+                    w.write("${e.timestamp},${e.temperature},${e.latitude ?: ""},${e.longitude ?: ""}\n")
+                }
+            }
+            val uri = FileProvider.getUriForFile(this@LoggingActivity, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Export CSV"))
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
