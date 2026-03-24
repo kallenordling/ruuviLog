@@ -11,19 +11,12 @@ import android.os.IBinder
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import androidx.lifecycle.lifecycleScope
 import com.nordling.ruuvilog.databinding.ActivityLoggingBinding
 import com.nordling.ruuvilog.db.AppDatabase
-import kotlinx.coroutines.launch
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class LoggingActivity : AppCompatActivity() {
 
@@ -94,14 +87,6 @@ class LoggingActivity : AppCompatActivity() {
             if (LoggingService.isRunning) stopLogging() else startLogging()
         }
 
-        binding.btnClearLog.setOnClickListener {
-            lifecycleScope.launch {
-                db.logDao().deleteByMac(targetMac)
-                db.sessionDao().deleteByMac(targetMac)
-            }
-        }
-
-        binding.btnExportCsv.setOnClickListener { exportCsv() }
 
         requestLocationPermissionIfNeeded()
     }
@@ -183,54 +168,6 @@ class LoggingActivity : AppCompatActivity() {
         }
     }
 
-    private fun exportCsv() {
-        lifecycleScope.launch {
-            val entries = db.logDao().getAllByMac(targetMac)
-            if (entries.isEmpty()) {
-                Toast.makeText(this@LoggingActivity, "No data to export", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val speeds = mutableMapOf<Long, Float>()
-            var prevGps: com.nordling.ruuvilog.db.LogEntry? = null
-            for (entry in entries) {
-                if (entry.latitude != null && entry.longitude != null) {
-                    val prev = prevGps
-                    if (prev != null && prev.latitude != null && prev.longitude != null) {
-                        val results = FloatArray(1)
-                        Location.distanceBetween(
-                            prev.latitude!!, prev.longitude!!,
-                            entry.latitude, entry.longitude, results
-                        )
-                        val timeDeltaS = (entry.timestamp - prev.timestamp) / 1000f
-                        if (timeDeltaS > 0) speeds[entry.id] = (results[0] / timeDeltaS) * 3.6f
-                    }
-                    prevGps = entry
-                }
-            }
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-            val exportDir = File(cacheDir, "export").also { it.mkdirs() }
-            val file = File(exportDir, "ruuvi_${targetMac.replace(":", "")}.csv")
-            file.bufferedWriter().use { w ->
-                w.write("time,session,temperature_c,latitude,longitude,speed_kmh\n")
-                entries.forEach { e ->
-                    val time = dateFormat.format(Date(e.timestamp))
-                    val temp = String.format(Locale.US, "%.2f", e.temperature)
-                    val lat = e.latitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
-                    val lon = e.longitude?.let { String.format(Locale.US, "%.6f", it) } ?: ""
-                    val speed = speeds[e.id]?.let { String.format(Locale.US, "%.2f", it) } ?: ""
-                    val session = e.sessionId?.toString() ?: ""
-                    w.write("$time,$session,$temp,$lat,$lon,$speed\n")
-                }
-            }
-            val uri = FileProvider.getUriForFile(this@LoggingActivity, "$packageName.fileprovider", file)
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(shareIntent, "Export CSV"))
-        }
-    }
 
     override fun onSupportNavigateUp(): Boolean {
         finish()
