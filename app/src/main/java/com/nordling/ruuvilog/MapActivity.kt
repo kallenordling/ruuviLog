@@ -8,7 +8,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.nordling.ruuvilog.databinding.ActivityMapBinding
 import com.nordling.ruuvilog.db.AppDatabase
-import com.nordling.ruuvilog.db.LogEntry
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -29,7 +28,6 @@ class MapActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMapBinding
     private val db by lazy { AppDatabase.getInstance(this) }
-    private val speedAdapter = SpeedAdapter()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private var colorBySpeed = false
     private var sessionId: Long = -1
@@ -52,7 +50,6 @@ class MapActivity : AppCompatActivity() {
 
         binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
         binding.mapView.setMultiTouchControls(true)
-        binding.recyclerSpeed.adapter = speedAdapter
 
         binding.radioGroupColor.setOnCheckedChangeListener { _, checkedId ->
             colorBySpeed = checkedId == R.id.radioColorSpeed
@@ -74,10 +71,6 @@ class MapActivity : AppCompatActivity() {
 
             if (entries.isEmpty()) {
                 binding.textNoGps.visibility = View.VISIBLE
-                speedAdapter.submitList(emptyList())
-                binding.textMaxSpeed.text = "—"
-                binding.textAvgSpeed.text = "—"
-                binding.textTotalDist.text = "—"
                 return@launch
             }
             binding.textNoGps.visibility = View.GONE
@@ -133,42 +126,6 @@ class MapActivity : AppCompatActivity() {
             // Fit bounds
             val bbox = BoundingBox.fromGeoPoints(points)
             binding.mapView.post { binding.mapView.zoomToBoundingBox(bbox.increaseByScale(1.3f), true) }
-
-            // Speed stats
-            val speedEntries = mutableListOf<SpeedEntry>()
-            var totalDistM = 0f
-            var totalTimeS = 0L
-            var maxSpeedKmh = 0f
-
-            for (i in 1 until entries.size) {
-                val results = FloatArray(1)
-                Location.distanceBetween(
-                    entries[i - 1].latitude!!, entries[i - 1].longitude!!,
-                    entries[i].latitude!!, entries[i].longitude!!,
-                    results
-                )
-                val distM = results[0]
-                val dt = (entries[i].timestamp - entries[i - 1].timestamp) / 1000f
-                if (dt > 0) {
-                    val kmh = (distM / dt) * 3.6f
-                    maxSpeedKmh = maxOf(maxSpeedKmh, kmh)
-                    totalDistM += distM
-                    totalTimeS += dt.toLong()
-                    speedEntries.add(
-                        SpeedEntry(
-                            timeLabel = timeFormat.format(Date(entries[i].timestamp)),
-                            distanceM = distM,
-                            speedKmh = kmh
-                        )
-                    )
-                }
-            }
-
-            speedAdapter.submitList(speedEntries)
-            val avgKmh = if (totalTimeS > 0) (totalDistM / totalTimeS) * 3.6f else 0f
-            binding.textMaxSpeed.text = "%.1f".format(maxSpeedKmh)
-            binding.textAvgSpeed.text = "%.1f".format(avgKmh)
-            binding.textTotalDist.text = "%.2f".format(totalDistM / 1000f)
         }
     }
 

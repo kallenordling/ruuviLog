@@ -88,9 +88,34 @@ class SessionDetailActivity : AppCompatActivity() {
                 String.format(Locale.US, "%.1f – %.1f °C", temps.min(), temps.max())
             else "—"
 
+            // Speed summary from GPS entries
+            val gpsEntries = entries.filter { it.latitude != null && it.longitude != null }
+            var totalDistM = 0f
+            var totalTimeS = 0L
+            var maxSpeedKmh = 0f
+            for (i in 1 until gpsEntries.size) {
+                val results = FloatArray(1)
+                Location.distanceBetween(
+                    gpsEntries[i - 1].latitude!!, gpsEntries[i - 1].longitude!!,
+                    gpsEntries[i].latitude!!, gpsEntries[i].longitude!!,
+                    results
+                )
+                val dt = (gpsEntries[i].timestamp - gpsEntries[i - 1].timestamp) / 1000f
+                if (dt > 0) {
+                    val kmh = (results[0] / dt) * 3.6f
+                    maxSpeedKmh = maxOf(maxSpeedKmh, kmh)
+                    totalDistM += results[0]
+                    totalTimeS += dt.toLong()
+                }
+            }
+            val avgKmh = if (totalTimeS > 0) (totalDistM / totalTimeS) * 3.6f else 0f
+
             binding.textEntryCount.text = count.toString()
             binding.textDuration.text = duration
             binding.textTempRange.text = tempRange
+            binding.textMaxSpeed.text = if (maxSpeedKmh > 0) String.format(Locale.US, "%.1f", maxSpeedKmh) else "—"
+            binding.textAvgSpeed.text = if (avgKmh > 0) String.format(Locale.US, "%.1f", avgKmh) else "—"
+            binding.textTotalDist.text = if (totalDistM > 0) String.format(Locale.US, "%.2f", totalDistM / 1000f) else "—"
         }
     }
 
