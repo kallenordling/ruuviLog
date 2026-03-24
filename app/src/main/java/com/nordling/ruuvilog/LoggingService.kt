@@ -63,6 +63,10 @@ class LoggingService : Service() {
     private var intervalSeconds = 10
     private var currentSessionId: Long = -1
 
+    // Rolling buffer of (timestampMs, location) for GPS averaging
+    private val locationBuffer = mutableListOf<Pair<Long, Location>>()
+    private val GPS_WINDOW_MS = 3000L
+
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
     }
@@ -70,19 +74,25 @@ class LoggingService : Service() {
         getSystemService(LOCATION_SERVICE) as LocationManager
     }
 
-    private val locationListener = LocationListener { loc -> lastLocation.postValue(loc) }
+    private val locationListener = LocationListener { loc ->
+        val now = System.currentTimeMillis()
+        locationBuffer.add(Pair(now, loc))
+        locationBuffer.removeAll { now - it.first > GPS_WINDOW_MS }
+        lastLocation.postValue(loc)
+    }
 
     private val logRunnable = object : Runnable {
         override fun run() {
             val temp = latestTag.value?.temperature
             if (temp != null) {
                 scope.launch {
+                    val avgLoc = averagedLocation()
                     db.logDao().insert(
                         LogEntry(
                             mac = targetMac,
                             temperature = temp,
-                            latitude = lastLocation.value?.latitude,
-                            longitude = lastLocation.value?.longitude,
+                            latitude = avgLoc?.first,
+                            longitude = avgLoc?.second,
                             sessionId = currentSessionId.takeIf { it > 0 }
                         )
                     )
@@ -101,6 +111,17 @@ class LoggingService : Service() {
             RuuviParser.parse(result.device.address, result.rssi, data)
                 ?.let { latestTag.postValue(it) }
         }
+    }
+
+    /** Returns the mean lat/lon of samples collected in the last GPS_WINDOW_MS milliseconds. */
+    private fun averagedLocation(): Pair<Double, Double>? {
+        val now = System.currentTimeMillis()
+        val recent = locationBuffer.filter { now - it.first <= GPS_WINDOW_MS }.map { it.second }
+        if (recent.isEmpty()) return null
+        return Pair(
+            recent.sumOf { it.latitude } / recent.size,
+            recent.sumOf { it.longitude } / recent.size
+        )
     }
 
     override fun onBind(intent: Intent): IBinder = binder
