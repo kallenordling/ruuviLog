@@ -40,6 +40,7 @@ class LoggingActivity : AppCompatActivity() {
     private var selectedIntervalSeconds = 10
     private var loggingService: LoggingService? = null
     private var isBound = false
+    private var isLogging = false
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -84,7 +85,7 @@ class LoggingActivity : AppCompatActivity() {
         }
 
         binding.btnStartLog.setOnClickListener {
-            if (LoggingService.isRunning) stopLogging() else startLogging()
+            if (isLogging) stopLogging() else startLogging()
         }
 
 
@@ -93,7 +94,8 @@ class LoggingActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (LoggingService.isRunning) {
+        isLogging = LoggingService.isRunning
+        if (isLogging) {
             bindService(serviceIntent(), serviceConnection, 0)
         }
         updateLoggingButton()
@@ -109,6 +111,7 @@ class LoggingActivity : AppCompatActivity() {
     }
 
     private fun startLogging() {
+        isLogging = true
         val intent = serviceIntent()
         ContextCompat.startForegroundService(this, intent)
         bindService(intent, serviceConnection, 0)
@@ -117,6 +120,7 @@ class LoggingActivity : AppCompatActivity() {
     }
 
     private fun stopLogging() {
+        isLogging = false
         if (isBound) {
             unbindService(serviceConnection)
             isBound = false
@@ -127,9 +131,8 @@ class LoggingActivity : AppCompatActivity() {
     }
 
     private fun updateLoggingButton() {
-        val running = LoggingService.isRunning
-        binding.btnStartLog.text = if (running) "Stop Logging" else "Start Logging"
-        binding.spinnerInterval.isEnabled = !running
+        binding.btnStartLog.text = if (isLogging) "Stop Logging" else "Start Logging"
+        binding.spinnerInterval.isEnabled = !isLogging
     }
 
     private fun serviceIntent() = Intent(this, LoggingService::class.java).apply {
